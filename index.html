@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Notes App</title>
+<style>
+*{box-sizing:border-box}body{font-family:Segoe UI,Arial,sans-serif;background:#f1f5fb;margin:0;color:#14213d}
+.wrap{max-width:720px;margin:0 auto;padding:24px 16px}
+h1{text-align:center;color:#1d4ed8}
+.card{background:#fff;border-radius:14px;padding:20px;box-shadow:0 4px 16px #1d4ed820;margin-bottom:16px}
+input,textarea{width:100%;padding:12px;border:1.5px solid #c9d4ee;border-radius:10px;font:inherit;margin-bottom:10px}
+button{padding:10px 18px;border:0;border-radius:10px;background:#1d4ed8;color:#fff;font-weight:600;cursor:pointer;margin-right:8px}
+button.del{background:#dc2626}button.gray{background:#64748b}
+.note h3{margin:0 0 6px}.note p{white-space:pre-wrap;margin:0 0 8px}.note small{display:block;color:#64748b;margin-bottom:10px}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+#msg{text-align:center;min-height:22px;font-weight:600}.err{color:#dc2626}.ok{color:#16a34a}
+</style></head><body><div class="wrap">
+<h1>📝 Notes App</h1><div id="msg"></div>
+
+<div id="auth" class="card" hidden>
+ <h3>Login / Sign up</h3>
+ <input id="email" type="email" placeholder="Email">
+ <input id="pass" type="password" placeholder="Password (min 6 characters)">
+ <button onclick="doAuth('in')">Login</button><button class="gray" onclick="doAuth('up')">Sign up</button>
+</div>
+
+<div id="app" hidden>
+ <div class="top"><b id="who"></b><button class="gray" onclick="logout()">Logout</button></div>
+ <div class="card">
+  <input id="title" placeholder="Note title">
+  <textarea id="content" rows="4" placeholder="Write your note..."></textarea>
+  <button id="save" onclick="saveNote()">Add Note</button><button id="cancel" class="gray" onclick="resetForm()" hidden>Cancel</button>
+ </div>
+ <div id="list"></div>
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+const SUPABASE_URL='https://fbaoggntvysjckipkjnr.supabase.co';
+const SUPABASE_KEY='sb_publishable_cqF-ZASMEi3nRIUQeZX4dg_cWwbU5EB';
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+const $=id=>document.getElementById(id);
+const msg=(t,err)=>{$('msg').textContent=t||'';$('msg').className=err?'err':'ok'};
+let editId=null;
+
+async function doAuth(kind){
+ const email=$('email').value.trim(),password=$('pass').value;
+ if(!email||password.length<6)return msg('Enter a valid email and a password of 6+ characters',1);
+ const r=kind==='up'?await sb.auth.signUp({email,password}):await sb.auth.signInWithPassword({email,password});
+ if(r.error)return msg(r.error.message,1);
+ if(kind==='up'&&!r.data.session)return msg('Account created. Check your email to confirm, then login.');
+ msg('');init();
+}
+async function init(){
+ const {data:{session}}=await sb.auth.getSession();
+ $('auth').hidden=!!session;$('app').hidden=!session;
+ if(session){$('who').textContent=session.user.email;load()}
+}
+async function load(){
+ const {data,error}=await sb.from('notes').select('*').order('created_at',{ascending:false});
+ if(error)return msg(error.message,1);
+ const box=$('list');box.innerHTML='';
+ if(!data.length){box.textContent='No notes yet. Add your first note!';return}
+ data.forEach(n=>{
+  const d=document.createElement('div');d.className='card note';
+  const h=document.createElement('h3');h.textContent=n.title;
+  const p=document.createElement('p');p.textContent=n.content||'';
+  const t=document.createElement('small');t.textContent=new Date(n.created_at).toLocaleString();
+  const e=document.createElement('button');e.textContent='Edit';e.onclick=()=>editNote(n);
+  const x=document.createElement('button');x.textContent='Delete';x.className='del';x.onclick=()=>delNote(n.id);
+  d.append(h,p,t,e,x);box.append(d);
+ });
+}
+function editNote(n){editId=n.id;$('title').value=n.title;$('content').value=n.content||'';$('save').textContent='Update Note';$('cancel').hidden=false;scrollTo(0,0)}
+function resetForm(){editId=null;$('title').value='';$('content').value='';$('save').textContent='Add Note';$('cancel').hidden=true}
+async function saveNote(){
+ const title=$('title').value.trim(),content=$('content').value.trim();
+ if(!title)return msg('Title is required',1);
+ const {error}=editId?await sb.from('notes').update({title,content}).eq('id',editId):await sb.from('notes').insert({title,content});
+ if(error)return msg(error.message,1);
+ msg('');resetForm();load();
+}
+async function delNote(id){
+ if(!confirm('Delete this note?'))return;
+ const {error}=await sb.from('notes').delete().eq('id',id);
+ if(error)return msg(error.message,1);load();
+}
+async function logout(){await sb.auth.signOut();init()}
+init();
+</script></body></html>
